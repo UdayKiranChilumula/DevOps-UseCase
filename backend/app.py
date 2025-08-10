@@ -6,7 +6,7 @@ from flask_cors import CORS
 
 
 app = Flask(__name__)
-CORS(app)
+#CORS(app)
 # PostgreSQL connection
 DB_HOST = os.getenv("HOST", "postgres")
 DB_NAME = os.getenv("POSTGRES_DB", "awsdb")
