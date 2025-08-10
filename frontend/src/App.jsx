@@ -7,7 +7,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch("http://3.82.103.81:30050/services") // Change if your backend runs elsewhere
+    fetch("http://aws-backend:5000/services") // Change if your backend runs elsewhere
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch data");
         return res.json();
