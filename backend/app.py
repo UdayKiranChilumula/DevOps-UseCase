@@ -6,7 +6,7 @@ import os
 app = Flask(__name__)
 
 # PostgreSQL connection
-DB_HOST = os.getenv("DB_HOST", "postgres-writer")
+DB_HOST = os.getenv("HOST", "postgres")
 DB_NAME = os.getenv("POSTGRES_DB", "awsdb")
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
 DB_PASS = os.getenv("POSTGRES_PASSWORD", "password")

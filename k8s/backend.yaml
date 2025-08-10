@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: aws-backend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: aws-backend
@@ -18,8 +18,8 @@ spec:
         ports:
         - containerPort: 5000
         env:
-        - name: DB_HOST
-          value: postgres-writer
+        - name: HOST
+          value: postgres
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:

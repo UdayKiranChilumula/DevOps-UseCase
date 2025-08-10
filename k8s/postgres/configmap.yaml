@@ -3,17 +3,10 @@ kind: ConfigMap
 metadata:
   name: postgres-config
 data:
-  primary.sh: |
-    #!/bin/bash
-    set -e
-    echo "Configuring replication user..."
-    psql -U "$POSTGRES_USER" -c "CREATE ROLE $REPLICATION_USER REPLICATION LOGIN ENCRYPTED PASSWORD '$REPLICATION_PASSWORD';"
-    echo "Replication user created."
-
   init.sql: |
     CREATE TABLE IF NOT EXISTS aws_services (
-      id SERIAL PRIMARY KEY,
-      service_name VARCHAR(50),
-      details TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        id SERIAL PRIMARY KEY,
+        service_name VARCHAR(50),
+        details TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
