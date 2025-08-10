@@ -23,7 +23,7 @@ kind: Service
 metadata:
   name: aws-frontend
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app: aws-frontend
   ports:
