@@ -4,9 +4,9 @@ import psycopg2
 import os
 from flask_cors import CORS
 
-
 app = Flask(__name__)
 CORS(app)
+
 # PostgreSQL connection
 DB_HOST = os.getenv("HOST", "postgres")
 DB_NAME = os.getenv("POSTGRES_DB", "awsdb")
@@ -40,12 +40,13 @@ iam = boto3.client('iam', region_name=AWS_REGION,
                    aws_secret_access_key=AWS_SECRET_KEY)
 
 
-# Insert functions for each service
+# Insert functions with duplicate prevention
 def insert_ec2(instance):
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO ec2_instances (instance_id, instance_type, state, private_ip, public_ip, launch_time, region)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (instance_id) DO NOTHING
         """, (
             instance["InstanceId"], instance["InstanceType"], instance["State"],
             instance["PrivateIP"], instance["PublicIP"], instance["LaunchTime"], AWS_REGION
@@ -57,6 +58,7 @@ def insert_s3(bucket):
         cur.execute("""
             INSERT INTO s3_buckets (bucket_name, creation_date, region)
             VALUES (%s, %s, %s)
+            ON CONFLICT (bucket_name) DO NOTHING
         """, (bucket["BucketName"], bucket["CreationDate"], AWS_REGION))
     conn.commit()
 
@@ -65,6 +67,7 @@ def insert_rds(db):
         cur.execute("""
             INSERT INTO rds_instances (db_instance_identifier, engine, status, allocated_storage, endpoint, port, creation_time, region)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (db_instance_identifier) DO NOTHING
         """, (
             db["DBInstanceIdentifier"], db["Engine"], db["Status"], db["AllocatedStorage"],
             db["Endpoint"], db["Port"], db["CreationTime"], AWS_REGION
@@ -76,6 +79,7 @@ def insert_iam(user):
         cur.execute("""
             INSERT INTO iam_users (user_name, user_id, arn, create_date, password_last_used)
             VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (user_id) DO NOTHING
         """, (
             user["UserName"], user["UserId"], user["Arn"], user["CreateDate"], user["PasswordLastUsed"]
         ))
@@ -129,7 +133,7 @@ def fetch_and_store():
             "PasswordLastUsed": u.get("PasswordLastUsed", None)
         })
 
-    return jsonify({"status": "success", "message": "AWS data stored in separate tables"})
+    return jsonify({"status": "success", "message": "AWS data stored in separate tables (no duplicates)"})
 
 
 @app.route('/api/services', methods=['GET'])
