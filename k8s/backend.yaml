@@ -51,10 +51,10 @@ kind: Service
 metadata:
   name: aws-backend
 spec:
-  type: NodePort
+  # type: NodePort
   selector:
     app: aws-backend
   ports:
     - port: 5000
       targetPort: 5000
-      nodePort: 30050
+      # nodePort: 30050

@@ -82,7 +82,7 @@ def insert_iam(user):
     conn.commit()
 
 
-@app.route('/fetch', methods=['POST'])
+@app.route('/api/fetch', methods=['POST'])
 def fetch_and_store():
     # EC2
     instances = ec2.describe_instances()
@@ -132,7 +132,7 @@ def fetch_and_store():
     return jsonify({"status": "success", "message": "AWS data stored in separate tables"})
 
 
-@app.route('/services', methods=['GET'])
+@app.route('/api/services', methods=['GET'])
 def get_services():
     data = {}
     with conn.cursor() as cur:
