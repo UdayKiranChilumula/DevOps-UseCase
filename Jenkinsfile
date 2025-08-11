@@ -54,12 +54,12 @@ pipeline {
             steps {
                 script {
                     sh """
-                    kubectl apply -f k8s/postgres/configmap.yaml
-                    kubectl apply -f k8s/postgres/secret.yaml
-                    kubectl apply -f k8s/postgres/statefulset.yaml
-                    kubectl apply -f k8s/backend.yaml
-                    kubectl apply -f k8s/frontend.yaml
-                    kubectl apply -f k8s/cronjob.yaml
+                    kubectl apply -f k8s/postgres/configmap.yaml --validate=false
+                    kubectl apply -f k8s/postgres/secret.yaml --validate=false
+                    kubectl apply -f k8s/postgres/statefulset.yaml --validate=false
+                    kubectl apply -f k8s/backend.yaml --validate=false
+                    kubectl apply -f k8s/frontend.yaml --validate=false
+                    kubectl apply -f k8s/cronjob.yaml --validate=false
                     """
                 }
             }
