@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-aws-data
+spec:
+  # Runs every 5 minutes
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: curl-client
+            image: curlimages/curl:latest
+            command:
+              - "curl"
+              - "-X"
+              - "POST"
+              - "http://aws-backend:5000/api/fetch"
+              - "-H"
+              - "Content-Type: application/json"
+          restartPolicy: OnFailure
