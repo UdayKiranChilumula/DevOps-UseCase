@@ -7,7 +7,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# PostgreSQL connection
+# ===== Database connection =====
 DB_HOST = os.getenv("HOST", "postgres")
 DB_NAME = os.getenv("POSTGRES_DB", "awsdb")
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
@@ -20,12 +20,12 @@ conn = psycopg2.connect(
     password=DB_PASS
 )
 
-# AWS credentials
+# ===== AWS credentials =====
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 
-# AWS clients
+# ===== AWS clients =====
 ec2 = boto3.client('ec2', region_name=AWS_REGION,
                    aws_access_key_id=AWS_ACCESS_KEY,
                    aws_secret_access_key=AWS_SECRET_KEY)
@@ -40,100 +40,94 @@ iam = boto3.client('iam', region_name=AWS_REGION,
                    aws_secret_access_key=AWS_SECRET_KEY)
 
 
-# Insert functions with duplicate prevention
-def insert_ec2(instance):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO ec2_instances (instance_id, instance_type, state, private_ip, public_ip, launch_time, region)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (instance_id) DO NOTHING
-        """, (
-            instance["InstanceId"], instance["InstanceType"], instance["State"],
-            instance["PrivateIP"], instance["PublicIP"], instance["LaunchTime"], AWS_REGION
-        ))
-    conn.commit()
-
-def insert_s3(bucket):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO s3_buckets (bucket_name, creation_date, region)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (bucket_name) DO NOTHING
-        """, (bucket["BucketName"], bucket["CreationDate"], AWS_REGION))
-    conn.commit()
-
-def insert_rds(db):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO rds_instances (db_instance_identifier, engine, status, allocated_storage, endpoint, port, creation_time, region)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (db_instance_identifier) DO NOTHING
-        """, (
-            db["DBInstanceIdentifier"], db["Engine"], db["Status"], db["AllocatedStorage"],
-            db["Endpoint"], db["Port"], db["CreationTime"], AWS_REGION
-        ))
-    conn.commit()
-
-def insert_iam(user):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO iam_users (user_name, user_id, arn, create_date, password_last_used)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (user_id) DO NOTHING
-        """, (
-            user["UserName"], user["UserId"], user["Arn"], user["CreateDate"], user["PasswordLastUsed"]
-        ))
-    conn.commit()
-
-
-@app.route('/api/fetch', methods=['POST'])
-def fetch_and_store():
-    # EC2
+# ===== Sync Functions =====
+def sync_ec2():
+    aws_ids = []
     instances = ec2.describe_instances()
     for reservation in instances.get("Reservations", []):
         for inst in reservation.get("Instances", []):
-            insert_ec2({
-                "InstanceId": inst["InstanceId"],
-                "InstanceType": inst["InstanceType"],
-                "State": inst["State"]["Name"],
-                "PrivateIP": inst.get("PrivateIpAddress"),
-                "PublicIP": inst.get("PublicIpAddress"),
-                "LaunchTime": inst["LaunchTime"].strftime("%Y-%m-%d %H:%M:%S")
-            })
+            aws_ids.append(inst["InstanceId"])
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO ec2_instances (instance_id, instance_type, state, private_ip, public_ip, launch_time, region)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (instance_id) DO NOTHING
+                """, (
+                    inst["InstanceId"], inst["InstanceType"], inst["State"]["Name"],
+                    inst.get("PrivateIpAddress"), inst.get("PublicIpAddress"),
+                    inst["LaunchTime"].strftime("%Y-%m-%d %H:%M:%S"), AWS_REGION
+                ))
+    # Remove deleted EC2s
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM ec2_instances WHERE instance_id NOT IN %s", (tuple(aws_ids) or ('',),))
+    conn.commit()
 
-    # S3
+
+def sync_s3():
+    aws_names = []
     buckets = s3.list_buckets()
     for b in buckets.get("Buckets", []):
-        insert_s3({
-            "BucketName": b["Name"],
-            "CreationDate": b["CreationDate"].strftime("%Y-%m-%d %H:%M:%S")
-        })
+        aws_names.append(b["Name"])
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO s3_buckets (bucket_name, creation_date, region)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (bucket_name) DO NOTHING
+            """, (
+                b["Name"], b["CreationDate"].strftime("%Y-%m-%d %H:%M:%S"), AWS_REGION
+            ))
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM s3_buckets WHERE bucket_name NOT IN %s", (tuple(aws_names) or ('',),))
+    conn.commit()
 
-    # RDS
+
+def sync_rds():
+    aws_ids = []
     dbs = rds.describe_db_instances()
     for db in dbs.get("DBInstances", []):
-        insert_rds({
-            "DBInstanceIdentifier": db["DBInstanceIdentifier"],
-            "Engine": db["Engine"],
-            "Status": db["DBInstanceStatus"],
-            "AllocatedStorage": db["AllocatedStorage"],
-            "Endpoint": db.get("Endpoint", {}).get("Address"),
-            "Port": db.get("Endpoint", {}).get("Port"),
-            "CreationTime": db["InstanceCreateTime"].strftime("%Y-%m-%d %H:%M:%S")
-        })
+        aws_ids.append(db["DBInstanceIdentifier"])
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO rds_instances (db_instance_identifier, engine, status, allocated_storage, endpoint, port, creation_time, region)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (db_instance_identifier) DO NOTHING
+            """, (
+                db["DBInstanceIdentifier"], db["Engine"], db["DBInstanceStatus"], db["AllocatedStorage"],
+                db.get("Endpoint", {}).get("Address"), db.get("Endpoint", {}).get("Port"),
+                db["InstanceCreateTime"].strftime("%Y-%m-%d %H:%M:%S"), AWS_REGION
+            ))
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM rds_instances WHERE db_instance_identifier NOT IN %s", (tuple(aws_ids) or ('',),))
+    conn.commit()
 
-    # IAM
+
+def sync_iam():
+    aws_ids = []
     users = iam.list_users()
     for u in users.get("Users", []):
-        insert_iam({
-            "UserName": u["UserName"],
-            "UserId": u["UserId"],
-            "Arn": u["Arn"],
-            "CreateDate": u["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"),
-            "PasswordLastUsed": u.get("PasswordLastUsed", None)
-        })
+        aws_ids.append(u["UserId"])
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO iam_users (user_name, user_id, arn, create_date, password_last_used)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO NOTHING
+            """, (
+                u["UserName"], u["UserId"], u["Arn"],
+                u["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"), u.get("PasswordLastUsed", None)
+            ))
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM iam_users WHERE user_id NOT IN %s", (tuple(aws_ids) or ('',),))
+    conn.commit()
 
-    return jsonify({"status": "success", "message": "AWS data stored in separate tables (no duplicates)"})
+
+# ===== API Routes =====
+@app.route('/api/fetch', methods=['POST'])
+def fetch_and_store():
+    sync_ec2()
+    sync_s3()
+    sync_rds()
+    sync_iam()
+    return jsonify({"status": "success", "message": "AWS data synced (added/removed) with DB"})
 
 
 @app.route('/api/services', methods=['GET'])
