@@ -71,6 +71,8 @@ pipeline {
                 sh """
                 kubectl apply -f k8s/postgres/
                 kubectl apply -f k8s/
+                kubectl rollout restart deployment aws-backend
+                kubectl rollout restart deployment aws-frontend
                 """
             }
         }
