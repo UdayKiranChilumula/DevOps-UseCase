@@ -5,6 +5,7 @@ pipeline {
         BACKEND_IMAGE = "udaykiranchilumula/aws-backend"
         FRONTEND_IMAGE = "udaykiranchilumula/aws-frontend"
     }
+    
 
     stages {
         stage('Checkout') {
