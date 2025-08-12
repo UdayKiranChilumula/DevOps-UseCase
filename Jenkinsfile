@@ -16,11 +16,7 @@ pipeline {
         stage('Build Backend Image') {
             steps {
                 dir('backend') {
-                    script {
-                        sh """
-                        docker build -t ${BACKEND_IMAGE}:latest .
-                        """
-                    }
+                    sh "docker build -t ${BACKEND_IMAGE}:latest ."
                 }
             }
         }
@@ -28,11 +24,7 @@ pipeline {
         stage('Build Frontend Image') {
             steps {
                 dir('frontend') {
-                    script {
-                        sh """
-                        docker build -t ${FRONTEND_IMAGE}:latest .
-                        """
-                    }
+                    sh "docker build -t ${FRONTEND_IMAGE}:latest ."
                 }
             }
         }
@@ -40,24 +32,44 @@ pipeline {
         stage('Push Images') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')]) {
-                sh """
-                echo "${DOCKERHUB_PASSWORD}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
-                docker push ${BACKEND_IMAGE}:latest
-                docker push ${FRONTEND_IMAGE}:latest
-                """
-            }
+                    sh """
+                    echo "${DOCKERHUB_PASSWORD}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+                    docker push ${BACKEND_IMAGE}:latest
+                    docker push ${FRONTEND_IMAGE}:latest
+                    """
+                }
             }
         }
 
+        stage('Create Kubernetes Secrets') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'postgres-credentials', usernameVariable: 'PG_USER', passwordVariable: 'PG_PASSWORD'),
+                    string(credentialsId: 'postgres-db', variable: 'PG_DB'),
+                    usernamePassword(credentialsId: 'aws-credentials', usernameVariable: 'AWS_KEY', passwordVariable: 'AWS_SECRET')
+                ]) {
+                    sh """
+                    kubectl delete secret postgres-secret --ignore-not-found
+                    kubectl create secret generic postgres-secret \
+                      --from-literal=POSTGRES_USER=${PG_USER} \
+                      --from-literal=POSTGRES_PASSWORD=${PG_PASSWORD} \
+                      --from-literal=POSTGRES_DB=${PG_DB}
+
+                    kubectl delete secret aws-credentials --ignore-not-found
+                    kubectl create secret generic aws-credentials \
+                      --from-literal=AWS_ACCESS_KEY_ID=${AWS_KEY} \
+                      --from-literal=AWS_SECRET_ACCESS_KEY=${AWS_SECRET}
+                    """
+                }
+            }
+        }
 
         stage('Deploy to Kubernetes') {
             steps {
-                script {
-                    sh """
-                    kubectl apply -f k8s/postgres/
-                    kubectl apply -f k8s/
-                    """
-                }
+                sh """
+                kubectl apply -f k8s/postgres/
+                kubectl apply -f k8s/
+                """
             }
         }
     }
@@ -65,8 +77,7 @@ pipeline {
     post {
         always {
             echo "Cleaning up cloned repo directory..."
-            deleteDir() // Jenkins built-in — cleans the workspace
+            deleteDir()
         }
     }
-
 }
