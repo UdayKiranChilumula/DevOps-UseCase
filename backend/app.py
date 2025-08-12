@@ -7,7 +7,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# ------------------ PostgreSQL Connection ------------------
+# PostgreSQL connection
 DB_HOST = os.getenv("HOST", "postgres")
 DB_NAME = os.getenv("POSTGRES_DB", "awsdb")
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
@@ -20,12 +20,12 @@ conn = psycopg2.connect(
     password=DB_PASS
 )
 
-# ------------------ AWS Credentials ------------------
+# AWS credentials
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 
-# AWS Clients
+# AWS clients
 ec2 = boto3.client('ec2', region_name=AWS_REGION,
                    aws_access_key_id=AWS_ACCESS_KEY,
                    aws_secret_access_key=AWS_SECRET_KEY)
@@ -39,7 +39,8 @@ iam = boto3.client('iam', region_name=AWS_REGION,
                    aws_access_key_id=AWS_ACCESS_KEY,
                    aws_secret_access_key=AWS_SECRET_KEY)
 
-# ------------------ Insert Functions ------------------
+
+# Insert functions with duplicate prevention
 def insert_ec2(instance):
     with conn.cursor() as cur:
         cur.execute("""
@@ -84,15 +85,13 @@ def insert_iam(user):
         ))
     conn.commit()
 
-# ------------------ Sync Route ------------------
+
 @app.route('/api/fetch', methods=['POST'])
 def fetch_and_store():
-    # ===== EC2 =====
-    aws_ec2_ids = []
+    # EC2
     instances = ec2.describe_instances()
     for reservation in instances.get("Reservations", []):
         for inst in reservation.get("Instances", []):
-            aws_ec2_ids.append(inst["InstanceId"])
             insert_ec2({
                 "InstanceId": inst["InstanceId"],
                 "InstanceType": inst["InstanceType"],
@@ -101,36 +100,18 @@ def fetch_and_store():
                 "PublicIP": inst.get("PublicIpAddress"),
                 "LaunchTime": inst["LaunchTime"].strftime("%Y-%m-%d %H:%M:%S")
             })
-    with conn.cursor() as cur:
-        cur.execute("SELECT instance_id FROM ec2_instances")
-        db_ec2_ids = [row[0] for row in cur.fetchall()]
-        for db_id in db_ec2_ids:
-            if db_id not in aws_ec2_ids:
-                cur.execute("DELETE FROM ec2_instances WHERE instance_id = %s", (db_id,))
-    conn.commit()
 
-    # ===== S3 =====
-    aws_s3_names = []
+    # S3
     buckets = s3.list_buckets()
     for b in buckets.get("Buckets", []):
-        aws_s3_names.append(b["Name"])
         insert_s3({
             "BucketName": b["Name"],
             "CreationDate": b["CreationDate"].strftime("%Y-%m-%d %H:%M:%S")
         })
-    with conn.cursor() as cur:
-        cur.execute("SELECT bucket_name FROM s3_buckets")
-        db_s3_names = [row[0] for row in cur.fetchall()]
-        for db_name in db_s3_names:
-            if db_name not in aws_s3_names:
-                cur.execute("DELETE FROM s3_buckets WHERE bucket_name = %s", (db_name,))
-    conn.commit()
 
-    # ===== RDS =====
-    aws_rds_ids = []
+    # RDS
     dbs = rds.describe_db_instances()
     for db in dbs.get("DBInstances", []):
-        aws_rds_ids.append(db["DBInstanceIdentifier"])
         insert_rds({
             "DBInstanceIdentifier": db["DBInstanceIdentifier"],
             "Engine": db["Engine"],
@@ -140,19 +121,10 @@ def fetch_and_store():
             "Port": db.get("Endpoint", {}).get("Port"),
             "CreationTime": db["InstanceCreateTime"].strftime("%Y-%m-%d %H:%M:%S")
         })
-    with conn.cursor() as cur:
-        cur.execute("SELECT db_instance_identifier FROM rds_instances")
-        db_rds_ids = [row[0] for row in cur.fetchall()]
-        for db_id in db_rds_ids:
-            if db_id not in aws_rds_ids:
-                cur.execute("DELETE FROM rds_instances WHERE db_instance_identifier = %s", (db_id,))
-    conn.commit()
 
-    # ===== IAM =====
-    aws_iam_ids = []
+    # IAM
     users = iam.list_users()
     for u in users.get("Users", []):
-        aws_iam_ids.append(u["UserId"])
         insert_iam({
             "UserName": u["UserName"],
             "UserId": u["UserId"],
@@ -160,18 +132,10 @@ def fetch_and_store():
             "CreateDate": u["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"),
             "PasswordLastUsed": u.get("PasswordLastUsed", None)
         })
-    with conn.cursor() as cur:
-        cur.execute("SELECT user_id FROM iam_users")
-        db_iam_ids = [row[0] for row in cur.fetchall()]
-        for db_id in db_iam_ids:
-            if db_id not in aws_iam_ids:
-                cur.execute("DELETE FROM iam_users WHERE user_id = %s", (db_id,))
-    conn.commit()
 
-    return jsonify({"status": "success", "message": "AWS data synced with DB (including deletions)"})
+    return jsonify({"status": "success", "message": "AWS data stored in separate tables (no duplicates)"})
 
 
-# ------------------ Services Route ------------------
 @app.route('/api/services', methods=['GET'])
 def get_services():
     data = {}
@@ -184,6 +148,5 @@ def get_services():
     return jsonify(data)
 
 
-# ------------------ Run App ------------------
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
