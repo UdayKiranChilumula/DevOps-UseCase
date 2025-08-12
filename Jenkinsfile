@@ -6,7 +6,6 @@ pipeline {
         FRONTEND_IMAGE = "udaykiranchilumula/aws-frontend"
     }
     
-
     stages {
         stage('Checkout') {
             steps {
