@@ -3,6 +3,7 @@ import boto3
 import psycopg2
 import os
 from flask_cors import CORS
+from psycopg2 import sql
 
 app = Flask(__name__)
 CORS(app)
@@ -40,7 +41,22 @@ iam = boto3.client('iam', region_name=AWS_REGION,
                    aws_secret_access_key=AWS_SECRET_KEY)
 
 
-# ===== Sync Functions =====
+def delete_not_in(table, column, valid_ids):
+    with conn.cursor() as cur:
+        if valid_ids:
+            placeholders = ','.join(['%s'] * len(valid_ids))
+            query = sql.SQL("DELETE FROM {table} WHERE {col} NOT IN ({ids})").format(
+                table=sql.Identifier(table),
+                col=sql.Identifier(column),
+                ids=sql.SQL(placeholders)
+            )
+            cur.execute(query, valid_ids)
+        else:
+            # If no resources in AWS, clear table
+            cur.execute(sql.SQL("DELETE FROM {table}").format(table=sql.Identifier(table)))
+    conn.commit()
+
+
 def sync_ec2():
     aws_ids = []
     instances = ec2.describe_instances()
@@ -57,10 +73,7 @@ def sync_ec2():
                     inst.get("PrivateIpAddress"), inst.get("PublicIpAddress"),
                     inst["LaunchTime"].strftime("%Y-%m-%d %H:%M:%S"), AWS_REGION
                 ))
-    # Remove deleted EC2s
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM ec2_instances WHERE instance_id NOT IN %s", (tuple(aws_ids) or ('',),))
-    conn.commit()
+    delete_not_in("ec2_instances", "instance_id", aws_ids)
 
 
 def sync_s3():
@@ -76,9 +89,7 @@ def sync_s3():
             """, (
                 b["Name"], b["CreationDate"].strftime("%Y-%m-%d %H:%M:%S"), AWS_REGION
             ))
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM s3_buckets WHERE bucket_name NOT IN %s", (tuple(aws_names) or ('',),))
-    conn.commit()
+    delete_not_in("s3_buckets", "bucket_name", aws_names)
 
 
 def sync_rds():
@@ -96,9 +107,7 @@ def sync_rds():
                 db.get("Endpoint", {}).get("Address"), db.get("Endpoint", {}).get("Port"),
                 db["InstanceCreateTime"].strftime("%Y-%m-%d %H:%M:%S"), AWS_REGION
             ))
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM rds_instances WHERE db_instance_identifier NOT IN %s", (tuple(aws_ids) or ('',),))
-    conn.commit()
+    delete_not_in("rds_instances", "db_instance_identifier", aws_ids)
 
 
 def sync_iam():
@@ -115,12 +124,9 @@ def sync_iam():
                 u["UserName"], u["UserId"], u["Arn"],
                 u["CreateDate"].strftime("%Y-%m-%d %H:%M:%S"), u.get("PasswordLastUsed", None)
             ))
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM iam_users WHERE user_id NOT IN %s", (tuple(aws_ids) or ('',),))
-    conn.commit()
+    delete_not_in("iam_users", "user_id", aws_ids)
 
 
-# ===== API Routes =====
 @app.route('/api/fetch', methods=['POST'])
 def fetch_and_store():
     sync_ec2()
