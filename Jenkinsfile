@@ -45,28 +45,25 @@ pipeline {
     steps {
         withCredentials([
             usernamePassword(credentialsId: 'postgres-credentials', usernameVariable: 'PG_USER', passwordVariable: 'PG_PASSWORD'),
-            string(credentialsId: 'postgres-db', variable: 'PG_DB')
+            string(credentialsId: 'postgres-db', variable: 'PG_DB'),
+            [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']
         ]) {
-            withAWS(credentials: 'aws-credentials', region: 'ap-south-1') {
-                script {
-                    // Jenkins automatically injects AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars here
-                    sh """
-                    kubectl delete secret postgres-secret --ignore-not-found
-                    kubectl create secret generic postgres-secret \
-                      --from-literal=POSTGRES_USER=${PG_USER} \
-                      --from-literal=POSTGRES_PASSWORD=${PG_PASSWORD} \
-                      --from-literal=POSTGRES_DB=${PG_DB}
+            sh """
+            kubectl delete secret postgres-secret --ignore-not-found
+            kubectl create secret generic postgres-secret \
+              --from-literal=POSTGRES_USER=${PG_USER} \
+              --from-literal=POSTGRES_PASSWORD=${PG_PASSWORD} \
+              --from-literal=POSTGRES_DB=${PG_DB}
 
-                    kubectl delete secret aws-credentials --ignore-not-found
-                    kubectl create secret generic aws-credentials \
-                      --from-literal=AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
-                      --from-literal=AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-                    """
-                }
-            }
+            kubectl delete secret aws-credentials --ignore-not-found
+            kubectl create secret generic aws-credentials \
+              --from-literal=AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+              --from-literal=AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            """
         }
     }
 }
+
 
 
         stage('Deploy to Kubernetes') {
